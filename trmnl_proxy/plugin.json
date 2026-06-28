@@ -1,0 +1,37 @@
+{
+  "tesserae_compat": "1.x",
+  "name": "TRMNL proxy",
+  "version": "0.1.0",
+  "kind": "widget",
+  "description": "Render the next-up screen from your TRMNL account on a Tesserae cell. Paste a device API key, paint whatever playlist is scheduled. The token never leaves the host: Tesserae fetches the envelope from /api/display and proxies the image bytes through itself.",
+  "icon": "ph-monitor-play",
+  "supports": {
+    "sizes": ["sm", "md", "lg"]
+  },
+  "settings": [
+    {
+      "name": "access_token",
+      "type": "string",
+      "label": "Device API key",
+      "secret": true,
+      "help": "From your TRMNL dashboard: Devices → click the device → Edit → 'Device API Key'."
+    }
+  ],
+  "cell_options": [
+    {
+      "name": "scale",
+      "type": "select",
+      "label": "Scale",
+      "default": "fill",
+      "choices": [
+        {"value": "fill",   "label": "Fill cell (crop to aspect)"},
+        {"value": "fit",    "label": "Fit (letterbox)"},
+        {"value": "center", "label": "Center (no scaling)"}
+      ]
+    }
+  ],
+  "render": {
+    "dither": "floyd-steinberg",
+    "full_bleed": true
+  }
+}
