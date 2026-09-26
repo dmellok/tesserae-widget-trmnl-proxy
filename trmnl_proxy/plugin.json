@@ -1,12 +1,16 @@
 {
   "tesserae_compat": "1.x",
   "name": "TRMNL proxy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "kind": "widget",
-  "description": "Render the next-up screen from your TRMNL account on a Tesserae cell. Paste a device API key, paint whatever playlist is scheduled. The token never leaves the host: Tesserae fetches the envelope from /api/display and proxies the image bytes through itself.",
+  "description": "Render the next-up screen from your TRMNL account on a Tesserae cell. Paste a device API key; Tesserae steps your playlist like the TRMNL firmware would, or mirrors what your TRMNL device shows. The token never leaves the host, which proxies the image bytes itself.",
   "icon": "ph-monitor-play",
   "supports": {
-    "sizes": ["sm", "md", "lg"]
+    "sizes": [
+      "sm",
+      "md",
+      "lg"
+    ]
   },
   "settings": [
     {
@@ -15,6 +19,23 @@
       "label": "Device API key",
       "secret": true,
       "help": "From your TRMNL dashboard: Devices → click the device → Edit → 'Device API Key'."
+    },
+    {
+      "name": "mode",
+      "type": "select",
+      "label": "Mode",
+      "default": "advance",
+      "choices": [
+        {
+          "value": "advance",
+          "label": "Advance my playlist (my TRMNL device points at Tesserae)"
+        },
+        {
+          "value": "mirror",
+          "label": "Mirror my TRMNL device (it still polls TRMNL's servers)"
+        }
+      ],
+      "help": "Advance uses /api/display, the call the TRMNL firmware makes, so each refresh moves to the next playlist item. Pick Mirror only if a real TRMNL device still polls usetrmnl.com and this cell should copy it; nothing advances the playlist in that mode except that device."
     }
   ],
   "cell_options": [
@@ -24,9 +45,18 @@
       "label": "Scale",
       "default": "fill",
       "choices": [
-        {"value": "fill",   "label": "Fill cell (crop to aspect)"},
-        {"value": "fit",    "label": "Fit (letterbox)"},
-        {"value": "center", "label": "Center (no scaling)"}
+        {
+          "value": "fill",
+          "label": "Fill cell (crop to aspect)"
+        },
+        {
+          "value": "fit",
+          "label": "Fit (letterbox)"
+        },
+        {
+          "value": "center",
+          "label": "Center (no scaling)"
+        }
       ]
     }
   ],
