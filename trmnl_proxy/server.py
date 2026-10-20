@@ -37,9 +37,19 @@ The proxy hop exists for two reasons:
 * **Token hygiene.** The cell never holds the access token in any
   URL it builds. Only the host-side TRMNL call carries it.
 
+The ``base_url`` setting points the widget at a self-hosted server
+that speaks the same API (LaraPaper, or another BYOS server) instead of
+usetrmnl.com. Because that URL is operator-chosen, both outbound
+fetches (the JSON envelope and the image download) go through
+``app.net_guard`` with ``allow_local=True``: loopback and LAN hosts are
+allowed so a server on the same box or network works, while link-local
+/ cloud-metadata addresses stay blocked and every redirect hop is
+re-checked.
+
 No multi-account admin pages. Tesserae's standard settings form
-renders the ``access_token`` and ``mode`` fields automatically thanks
-to the manifest declaration; nothing custom needed.
+renders the ``access_token``, ``mode`` and ``base_url`` fields
+automatically thanks to the manifest declaration; nothing custom
+needed.
 """
 
 from __future__ import annotations
@@ -49,19 +59,24 @@ import threading
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any
 
 from flask import Blueprint, Response, abort, current_app, request
 
-from app.plugin_http import fetch_json
+from app.net_guard import BlockedURLError, fetch_bytes, fetch_json
 
 logger = logging.getLogger(__name__)
 
 TRMNL_BASE = "https://usetrmnl.com"
-USER_AGENT = "tesserae-trmnl-proxy/0.2"
+DEFAULT_BASE_URL = TRMNL_BASE
+USER_AGENT = "tesserae-trmnl-proxy/0.3"
 HTTP_TIMEOUT_S = 12
 PROXY_TIMEOUT_S = 20
+# Upper bound on the envelope and image bodies. TRMNL / LaraPaper
+# screens are small 1-bit or greyscale PNG/BMP files; this only stops
+# a misbehaving server streaming something huge into memory.
+ENVELOPE_MAX_BYTES = 1 * 1024 * 1024
+IMAGE_MAX_BYTES = 16 * 1024 * 1024
 # Floor on time between upstream calls. TRMNL's docs explicitly ask
 # callers not to abuse current_screen, and in advance mode every call
 # steps the playlist; this rate-limits us per token regardless of how
@@ -109,6 +124,48 @@ def _mode() -> str:
     return DEFAULT_MODE
 
 
+def normalise_base_url(raw: Any) -> tuple[str, str | None]:
+    """Return ``(base_url, error)`` for the ``base_url`` setting.
+
+    Blank or missing means the TRMNL default. Whitespace and trailing
+    slashes are stripped. Anything that isn't an http(s) URL with a
+    host (or that carries a query / fragment) is rejected: the
+    returned base falls back to the default and ``error`` explains
+    what was wrong, so callers can surface it instead of crashing.
+    """
+    if raw is None:
+        return DEFAULT_BASE_URL, None
+    if not isinstance(raw, str):
+        return DEFAULT_BASE_URL, "Server URL must be text."
+    value = raw.strip().rstrip("/")
+    if not value:
+        return DEFAULT_BASE_URL, None
+    invalid = (
+        f"Server URL {value!r} isn't valid. Use something like "
+        "http://larapaper.local:4567 or leave it blank for usetrmnl.com."
+    )
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        host = parsed.hostname
+        parsed.port  # noqa: B018 - raises ValueError on a bad port
+    except ValueError:
+        return DEFAULT_BASE_URL, invalid
+    if (
+        parsed.scheme.lower() not in ("http", "https")
+        or not host
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        return DEFAULT_BASE_URL, invalid
+    return value, None
+
+
+def _base_url() -> tuple[str, str | None]:
+    return normalise_base_url(_settings().get("base_url"))
+
+
 def _dim_headers(width: int, height: int) -> dict[str, str]:
     """Both header pairs TRMNL firmwares historically read, so
     whichever convention this token's device kind respects we
@@ -131,14 +188,14 @@ def _dim_headers(width: int, height: int) -> dict[str, str]:
 _CACHE_LOCK = threading.Lock()
 # cache key -> {expires_at, envelope, image_bytes, content_type}.
 # ``None`` values mean "envelope cached but image not yet fetched".
-# One entry per (mode, token); multiple cells with the same token
-# share state, and flipping the mode setting starts a fresh window
-# instead of serving the other endpoint's leftovers.
+# One entry per (server, mode, token); multiple cells with the same
+# token share state, and flipping the mode or server setting starts a
+# fresh window instead of serving the other endpoint's leftovers.
 _CACHE: dict[str, dict[str, Any]] = {}
 
 
-def _cache_key(mode: str, token: str) -> str:
-    return f"{mode}:{token}"
+def _cache_key(mode: str, token: str, base_url: str = DEFAULT_BASE_URL) -> str:
+    return f"{base_url}|{mode}:{token}"
 
 
 def _cache_get(key: str) -> dict[str, Any] | None:
@@ -187,27 +244,35 @@ def _stale_entry(key: str) -> dict[str, Any] | None:
         return _CACHE.get(key)
 
 
-def _fetch_envelope(mode: str, token: str, cell_w: int, cell_h: int) -> dict[str, Any]:
-    """Call the endpoint for ``mode`` and return the parsed envelope.
-    Respects the in-process cache; populates it on success. On HTTP
-    429 / 409 (rate limit), returns the stale envelope when one
-    exists, else raises."""
-    key = _cache_key(mode, token)
+def _fetch_envelope(
+    mode: str,
+    token: str,
+    cell_w: int,
+    cell_h: int,
+    base_url: str = DEFAULT_BASE_URL,
+) -> dict[str, Any]:
+    """Call the endpoint for ``mode`` on ``base_url`` and return the
+    parsed envelope. Respects the in-process cache; populates it on
+    success. On HTTP 429 / 409 (rate limit), returns the stale
+    envelope when one exists, else raises."""
+    key = _cache_key(mode, token, base_url)
     cached = _cache_get(key)
     if cached is not None:
         return cached["envelope"]
     headers = {
         "Access-Token": token,
         "Accept": "application/json",
+        "Accept-Encoding": "identity",
         "User-Agent": USER_AGENT,
         **_dim_headers(cell_w, cell_h),
     }
     try:
         envelope = fetch_json(
-            f"{TRMNL_BASE}{_ENDPOINTS[mode]}",
+            f"{base_url}{_ENDPOINTS[mode]}",
             headers=headers,
             timeout=HTTP_TIMEOUT_S,
-            retries=0,
+            max_bytes=ENVELOPE_MAX_BYTES,
+            allow_local=True,
         )
     except urllib.error.HTTPError as exc:
         # TRMNL surfaces "too fast" via 429 (standard) but 409 has
@@ -244,12 +309,20 @@ def fetch(
             "error": "Paste a TRMNL device API key under Settings → Widgets → TRMNL proxy.",
         }
     mode = _mode()
+    base_url, base_err = _base_url()
+    if base_err:
+        # Don't fall through to usetrmnl.com: the key was most likely
+        # issued by the self-hosted server the operator meant to type,
+        # and sending it to a different host would leak it.
+        return {"error": base_err}
 
     cell_w = int(ctx.get("cell_w") or 0)
     cell_h = int(ctx.get("cell_h") or 0)
 
     try:
-        envelope = _fetch_envelope(mode, token, cell_w, cell_h)
+        envelope = _fetch_envelope(mode, token, cell_w, cell_h, base_url)
+    except BlockedURLError as exc:
+        return {"error": f"Server URL {base_url} is not allowed: {exc}"}
     except Exception as exc:
         return {"error": f"TRMNL API failure: {type(exc).__name__}: {exc}"}
 
@@ -260,7 +333,9 @@ def fetch(
     # answers 200. Only flag explicit error statuses.
     if isinstance(status, int) and status >= 400:
         return {
-            "error": (f"TRMNL said status {status}. Check the device on the TRMNL dashboard."),
+            "error": (
+                f"TRMNL said status {status}. Check the device on the TRMNL dashboard."
+            ),
         }
 
     filename = envelope.get("filename") or ""
@@ -292,7 +367,10 @@ def blueprint() -> Blueprint:
         if not token:
             abort(404)
         mode = _mode()
-        key = _cache_key(mode, token)
+        base_url, base_err = _base_url()
+        if base_err:
+            abort(502)
+        key = _cache_key(mode, token, base_url)
 
         try:
             cell_w = int(request.args.get("w") or 0)
@@ -301,7 +379,7 @@ def blueprint() -> Blueprint:
             cell_w = cell_h = 0
 
         try:
-            envelope = _fetch_envelope(mode, token, cell_w, cell_h)
+            envelope = _fetch_envelope(mode, token, cell_w, cell_h, base_url)
         except Exception as exc:
             logger.info("trmnl_proxy: %s fetch failed: %s", _ENDPOINTS[mode], exc)
             abort(502)
@@ -309,24 +387,34 @@ def blueprint() -> Blueprint:
         image_url = envelope.get("image_url")
         if not isinstance(image_url, str) or not image_url:
             abort(502)
+        # A self-hosted server may hand back a path rather than an
+        # absolute URL; resolve it against the configured server.
+        image_url = urllib.parse.urljoin(f"{base_url}/", image_url)
 
         # Image-bytes cache: re-use within the same TTL window. The
-        # entry is keyed on (mode, token), so two cells that hit this
+        # entry is keyed on (server, mode, token), so two cells that hit this
         # route within the window share one CDN fetch.
         cached = _cache_get(key)
         if cached is not None and cached["image_bytes"]:
-            resp = Response(cached["image_bytes"], mimetype=cached["content_type"] or "image/png")
+            resp = Response(
+                cached["image_bytes"], mimetype=cached["content_type"] or "image/png"
+            )
             resp.headers["Cache-Control"] = "no-store"
             return resp
 
-        req = urllib.request.Request(image_url, headers={"User-Agent": USER_AGENT})
         try:
-            with urllib.request.urlopen(req, timeout=PROXY_TIMEOUT_S) as upstream:
-                body = upstream.read()
-                ct = upstream.headers.get("Content-Type") or "image/png"
-        except (urllib.error.URLError, OSError) as exc:
+            body, ct = fetch_bytes(
+                image_url,
+                headers={"User-Agent": USER_AGENT},
+                timeout=PROXY_TIMEOUT_S,
+                max_bytes=IMAGE_MAX_BYTES,
+                allow_local=True,
+            )
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            # BlockedURLError is a ValueError, as is the size cap.
             logger.info("trmnl_proxy: image fetch failed for %s: %s", image_url, exc)
             abort(502)
+        ct = ct or "image/png"
 
         _cache_store_image(key, body, ct)
         resp = Response(body, mimetype=ct)

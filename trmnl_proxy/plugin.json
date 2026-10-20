@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "TRMNL proxy",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "widget",
   "description": "Render the next-up screen from your TRMNL account on a Tesserae cell. Paste a device API key; Tesserae steps your playlist like the TRMNL firmware would, or mirrors what your TRMNL device shows. The token never leaves the host, which proxies the image bytes itself.",
   "icon": "ph-monitor-play",
@@ -36,6 +36,13 @@
         }
       ],
       "help": "Advance uses /api/display, the call the TRMNL firmware makes, so each refresh moves to the next playlist item. Pick Mirror only if a real TRMNL device still polls usetrmnl.com and this cell should copy it; nothing advances the playlist in that mode except that device."
+    },
+    {
+      "name": "base_url",
+      "type": "string",
+      "label": "Server URL",
+      "default": "https://usetrmnl.com",
+      "help": "Leave as https://usetrmnl.com for a TRMNL account. To use a self-hosted LaraPaper or other BYOS server, enter its address (e.g. http://192.168.1.20:4567) and paste that server's device API key above. The image links that server returns must also be reachable from Tesserae, so set LaraPaper's APP_URL to an address Tesserae can open."
     }
   ],
   "cell_options": [
