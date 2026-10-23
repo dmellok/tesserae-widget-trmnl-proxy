@@ -37,7 +37,7 @@ render at different times.
 
 ## Self-hosted server (LaraPaper / BYOS)
 
-The **Server URL** setting (default `https://usetrmnl.com`) points
+The **Server URL** setting (default `https://trmnl.com`) points
 the widget at any server that speaks the same device API, such as a
 self-hosted [LaraPaper](https://github.com/usetrmnl/larapaper)
 install. Enter the server's address, e.g. `http://192.168.1.20:4567`,
@@ -63,10 +63,13 @@ header TRMNL uses.
   every redirect.
 - Changing the Server URL (or the mode) starts a fresh cache window,
   so you never see the previous server's screen.
+- TRMNL moved from usetrmnl.com to trmnl.com. Cells saved with the
+  old address keep using it as typed.
 
 ## Why this exists
 
-TRMNL's docs ([Private API → introduction](https://docs.trmnl.com/go/private-api/introduction))
+TRMNL's docs ([Private API → introduction](https://docs.trmnl.com/go/private-api/introduction),
+API reference at [trmnl.com/api-docs.md](https://trmnl.com/api-docs.md))
 explicitly endorse this use case: *"With a device's API key you can
 request content without a TRMNL device or TRMNL firmware."* The user
 keeps their TRMNL account, their plugin work, their compute. Tesserae

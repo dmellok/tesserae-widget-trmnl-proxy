@@ -56,7 +56,7 @@ def test_default_mode_advances_the_playlist(settings, upstream):
     # polls /api/display, so mirroring current_screen froze forever.
     out = server.fetch({}, {}, ctx={"cell_w": 800, "cell_h": 480})
     assert out["mode"] == "advance"
-    assert upstream[0][0] == "https://usetrmnl.com/api/display"
+    assert upstream[0][0] == "https://trmnl.com/api/display"
     assert upstream[0][1]["Access-Token"] == "tok-1"
     assert upstream[0][1]["Width"] == "800"
     assert out["image_url"].startswith("/plugins/trmnl_proxy/image?")
@@ -67,7 +67,7 @@ def test_mirror_mode_uses_current_screen(settings, upstream):
     settings["mode"] = "mirror"
     out = server.fetch({}, {}, ctx={})
     assert out["mode"] == "mirror"
-    assert upstream[0][0] == "https://usetrmnl.com/api/current_screen"
+    assert upstream[0][0] == "https://trmnl.com/api/current_screen"
 
 
 def test_unknown_mode_falls_back_to_default(settings, upstream):
@@ -98,8 +98,8 @@ def test_switching_mode_starts_a_fresh_window(settings, upstream):
     settings["mode"] = "mirror"
     server.fetch({}, {}, ctx={})
     assert [u for u, _ in upstream] == [
-        "https://usetrmnl.com/api/display",
-        "https://usetrmnl.com/api/current_screen",
+        "https://trmnl.com/api/display",
+        "https://trmnl.com/api/current_screen",
     ]
 
 
@@ -131,10 +131,12 @@ def test_error_status_is_reported(settings, monkeypatch):
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        (None, "https://usetrmnl.com"),
-        ("", "https://usetrmnl.com"),
-        ("   ", "https://usetrmnl.com"),
-        ("https://usetrmnl.com/", "https://usetrmnl.com"),
+        (None, "https://trmnl.com"),
+        ("", "https://trmnl.com"),
+        ("   ", "https://trmnl.com"),
+        ("https://trmnl.com/", "https://trmnl.com"),
+        # Cells saved before 0.3.1 keep the old TRMNL host as typed.
+        ("https://usetrmnl.com", "https://usetrmnl.com"),
         ("  http://192.168.1.20:4567/  ", "http://192.168.1.20:4567"),
         ("http://larapaper.local//", "http://larapaper.local"),
         ("https://example.com/trmnl/", "https://example.com/trmnl"),
@@ -161,12 +163,12 @@ def test_normalise_base_url_accepts(raw, expected):
 )
 def test_normalise_base_url_rejects_with_default(raw):
     base, err = server.normalise_base_url(raw)
-    assert base == "https://usetrmnl.com"
+    assert base == "https://trmnl.com"
     assert err
 
 
 def test_cache_key_includes_base_url():
-    a = server._cache_key("advance", "tok", "https://usetrmnl.com")
+    a = server._cache_key("advance", "tok", "https://trmnl.com")
     b = server._cache_key("advance", "tok", "http://larapaper.local")
     assert a != b
 
@@ -187,7 +189,7 @@ def test_switching_server_starts_a_fresh_window(settings, upstream):
     out = server.fetch({}, {}, ctx={})
     assert out["filename"] == "screen-2"
     assert [u for u, _ in upstream] == [
-        "https://usetrmnl.com/api/display",
+        "https://trmnl.com/api/display",
         "http://larapaper.local/api/display",
     ]
 

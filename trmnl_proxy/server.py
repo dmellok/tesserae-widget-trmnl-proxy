@@ -39,7 +39,7 @@ The proxy hop exists for two reasons:
 
 The ``base_url`` setting points the widget at a self-hosted server
 that speaks the same API (LaraPaper, or another BYOS server) instead of
-usetrmnl.com. Because that URL is operator-chosen, both outbound
+trmnl.com. Because that URL is operator-chosen, both outbound
 fetches (the JSON envelope and the image download) go through
 ``app.net_guard`` with ``allow_local=True``: loopback and LAN hosts are
 allowed so a server on the same box or network works, while link-local
@@ -67,7 +67,7 @@ from app.net_guard import BlockedURLError, fetch_bytes, fetch_json
 
 logger = logging.getLogger(__name__)
 
-TRMNL_BASE = "https://usetrmnl.com"
+TRMNL_BASE = "https://trmnl.com"
 DEFAULT_BASE_URL = TRMNL_BASE
 USER_AGENT = "tesserae-trmnl-proxy/0.3"
 HTTP_TIMEOUT_S = 12
@@ -142,7 +142,7 @@ def normalise_base_url(raw: Any) -> tuple[str, str | None]:
         return DEFAULT_BASE_URL, None
     invalid = (
         f"Server URL {value!r} isn't valid. Use something like "
-        "http://larapaper.local:4567 or leave it blank for usetrmnl.com."
+        "http://larapaper.local:4567 or leave it blank for trmnl.com."
     )
     try:
         parsed = urllib.parse.urlsplit(value)
@@ -311,7 +311,7 @@ def fetch(
     mode = _mode()
     base_url, base_err = _base_url()
     if base_err:
-        # Don't fall through to usetrmnl.com: the key was most likely
+        # Don't fall through to trmnl.com: the key was most likely
         # issued by the self-hosted server the operator meant to type,
         # and sending it to a different host would leak it.
         return {"error": base_err}
